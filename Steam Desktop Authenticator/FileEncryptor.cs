@@ -131,7 +131,7 @@ namespace Steam_Desktop_Authenticator
                         }
                     }
                 }
-                catch (CryptographicException)
+                catch (Exception)
                 {
                     plaintext = null;
                 }

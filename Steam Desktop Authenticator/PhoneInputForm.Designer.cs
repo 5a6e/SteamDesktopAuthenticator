@@ -59,9 +59,7 @@
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(556, 66);
             this.label1.TabIndex = 1;
-            this.label1.Text = "Your Steam account requires a phone number to add a mobile authenticator. \r\nThis " +
-    "phone number must be able to receieve SMS. \r\nVoIP and virtual phone numbers are " +
-    "not supported.";
+            this.label1.Text = "添加手机令牌需要绑定手机号。\r\n该号码必须能接收短信。\r\n不支持网络电话和虚拟号码。";
             // 
             // label2
             // 
@@ -72,7 +70,7 @@
             this.label2.Name = "label2";
             this.label2.Size = new System.Drawing.Size(276, 17);
             this.label2.TabIndex = 2;
-            this.label2.Text = "Two letter country code of the phone number:";
+            this.label2.Text = "手机号国家/地区二字码：";
             // 
             // label3
             // 
@@ -83,7 +81,7 @@
             this.label3.Name = "label3";
             this.label3.Size = new System.Drawing.Size(201, 17);
             this.label3.TabIndex = 3;
-            this.label3.Text = "Phone Number: (+1 0000000000)";
+            this.label3.Text = "手机号：（+86 13800000000）";
             // 
             // txtPhoneNumber
             // 
@@ -104,7 +102,7 @@
             this.btnSubmit.Name = "btnSubmit";
             this.btnSubmit.Size = new System.Drawing.Size(85, 31);
             this.btnSubmit.TabIndex = 5;
-            this.btnSubmit.Text = "Submit";
+            this.btnSubmit.Text = "提交";
             this.btnSubmit.UseVisualStyleBackColor = true;
             this.btnSubmit.Click += new System.EventHandler(this.btnSubmit_Click);
             // 
@@ -117,7 +115,7 @@
             this.btnCancel.Name = "btnCancel";
             this.btnCancel.Size = new System.Drawing.Size(85, 31);
             this.btnCancel.TabIndex = 6;
-            this.btnCancel.Text = "Cancel";
+            this.btnCancel.Text = "取消";
             this.btnCancel.UseVisualStyleBackColor = true;
             this.btnCancel.Click += new System.EventHandler(this.btnCancel_Click);
             // 
@@ -142,7 +140,7 @@
             this.Name = "PhoneInputForm";
             this.ShowInTaskbar = false;
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.Text = "PhoneInputForm";
+            this.Text = "填写手机号";
             this.ResumeLayout(false);
             this.PerformLayout();
 

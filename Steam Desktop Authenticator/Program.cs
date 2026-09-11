@@ -40,7 +40,7 @@ namespace Steam_Desktop_Authenticator
             // run the program only once
             if (PriorProcess() != null)
             {
-                MessageBox.Show("Another instance of the app is already running.");
+                MessageBox.Show("程序已经在运行。");
                 return;
             }
 
@@ -63,20 +63,17 @@ namespace Steam_Desktop_Authenticator
                 // Manifest file was corrupted, generate a new one.
                 try
                 {
-                    MessageBox.Show("Your settings were unexpectedly corrupted and were reset to defaults.", "Steam Desktop Authenticator", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                    MessageBox.Show("设置文件已损坏，已重置为默认值。", "Steam 桌面令牌", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
                     man = Manifest.GenerateNewManifest(true);
                 }
                 catch (MaFileEncryptedException)
                 {
                     // An maFile was encrypted, we're fucked.
-                    MessageBox.Show("Sorry, but SDA was unable to recover your accounts since you used encryption.\nYou'll need to recover your Steam accounts by removing the authenticator.\nClick OK to view instructions.", "Steam Desktop Authenticator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("由于使用了加密，无法恢复账号。\n请通过移除验证器来恢复 Steam 账号。\n点确定查看说明。", "Steam 桌面令牌", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     Process.Start(@"https://github.com/Jessecar96/SteamDesktopAuthenticator/wiki/Help!-I'm-locked-out-of-my-account");
                     return;
                 }
             }
-
-            // Warning that this software is no longer supported
-            MessageBox.Show("Steam Desktop Authenticator is no longer supported and will not receive any more updates. You should only use Steam's official mobile app to login to your account. Using SDA or any other tool is dangerous and puts your account at risk.", "Steam Desktop Authenticator", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
 
             if (man.FirstRun)
             {

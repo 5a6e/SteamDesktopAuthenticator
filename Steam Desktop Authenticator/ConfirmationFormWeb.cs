@@ -15,7 +15,7 @@ namespace Steam_Desktop_Authenticator
         {
             InitializeComponent();
             this.steamAccount = steamAccount;
-            this.Text = String.Format("Trade Confirmations - {0}", steamAccount.AccountName);
+            this.Text = String.Format("交易确认 - {0}", steamAccount.AccountName);
         }
         private async Task LoadData()
         {
@@ -24,7 +24,7 @@ namespace Steam_Desktop_Authenticator
             // Check for a valid refresh token first
             if (steamAccount.Session.IsRefreshTokenExpired())
             {
-                MessageBox.Show("Your session has expired. Use the login again button under the selected account menu.", "Trade Confirmations", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("会话已过期。请使用「当前账号」菜单中的「重新登录」。", "交易确认", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 this.Close();
                 return;
             }
@@ -38,7 +38,7 @@ namespace Steam_Desktop_Authenticator
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(ex.Message, "Steam Login Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(ex.Message, "Steam 登录错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     this.Close();
                     return;
                 }
@@ -50,7 +50,7 @@ namespace Steam_Desktop_Authenticator
 
                 if (confirmations == null || confirmations.Length == 0)
                 {
-                    Label errorLabel = new Label() { Text = "Nothing to confirm/cancel", AutoSize = true, ForeColor = Color.Black, Location = new Point(150, 20) };
+                    Label errorLabel = new Label() { Text = "没有待确认或取消的项目", AutoSize = true, ForeColor = Color.Black, Location = new Point(150, 20) };
                     this.splitContainer1.Panel2.Controls.Add(errorLabel);
                 }
 
@@ -130,7 +130,7 @@ namespace Steam_Desktop_Authenticator
             }
             catch (Exception ex)
             {
-                Label errorLabel = new Label() { Text = "Something went wrong:\n" + ex.Message, AutoSize = true, ForeColor = Color.Red, Location = new Point(20, 20) };
+                Label errorLabel = new Label() { Text = "出错了：\n" + ex.Message, AutoSize = true, ForeColor = Color.Red, Location = new Point(20, 20) };
                 this.splitContainer1.Panel2.Controls.Add(errorLabel);
             }
         }
@@ -157,23 +157,23 @@ namespace Steam_Desktop_Authenticator
         private async void btnRefresh_Click(object sender, EventArgs e)
         {
             this.btnRefresh.Enabled = false;
-            this.btnRefresh.Text = "Refreshing...";
+            this.btnRefresh.Text = "刷新中...";
 
             await this.LoadData();
 
             this.btnRefresh.Enabled = true;
-            this.btnRefresh.Text = "Refresh";
+            this.btnRefresh.Text = "刷新";
         }
 
         private async void ConfirmationFormWeb_Shown(object sender, EventArgs e)
         {
             this.btnRefresh.Enabled = false;
-            this.btnRefresh.Text = "Refreshing...";
+            this.btnRefresh.Text = "刷新中...";
 
             await this.LoadData();
 
             this.btnRefresh.Enabled = true;
-            this.btnRefresh.Text = "Refresh";
+            this.btnRefresh.Text = "刷新";
         }
     }
 }

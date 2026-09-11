@@ -134,7 +134,7 @@ namespace Steam_Desktop_Authenticator
                     if (newManifest.Entries.Count > 0)
                     {
                         newManifest.Save();
-                        newManifest.PromptSetupPassKey("This version of SDA has encryption. Please enter a passkey below, or hit cancel to remain unencrypted");
+                        newManifest.PromptSetupPassKey("必须设置加密密钥。");
                     }
                 }
             }
@@ -161,7 +161,7 @@ namespace Steam_Desktop_Authenticator
             string passKey = null;
             while (!passKeyValid)
             {
-                InputForm passKeyForm = new InputForm("Please enter your encryption passkey.", true);
+                InputForm passKeyForm = new InputForm("请输入加密密钥。", true);
                 passKeyForm.ShowDialog();
                 if (!passKeyForm.Canceled)
                 {
@@ -169,7 +169,7 @@ namespace Steam_Desktop_Authenticator
                     passKeyValid = this.VerifyPasskey(passKey);
                     if (!passKeyValid)
                     {
-                        MessageBox.Show("That passkey is invalid.");
+                        MessageBox.Show("加密密钥不正确。");
                     }
                 }
                 else
@@ -180,44 +180,78 @@ namespace Steam_Desktop_Authenticator
             return passKey;
         }
 
-        public string PromptSetupPassKey(string initialPrompt = "Enter passkey, or hit cancel to remain unencrypted.")
+        public string PromptSetupPassKey(string initialPrompt = "请设置加密密钥（必须填写）。")
         {
-            InputForm newPassKeyForm = new InputForm(initialPrompt);
-            newPassKeyForm.ShowDialog();
-            if (newPassKeyForm.Canceled || newPassKeyForm.txtBox.Text.Length == 0)
+            while (true)
             {
-                MessageBox.Show("WARNING: You chose to not encrypt your files. Doing so imposes a security risk for yourself. If an attacker were to gain access to your computer, they could completely lock you out of your account and steal all your items.");
-                return null;
+                InputForm newPassKeyForm = new InputForm(initialPrompt, true);
+                newPassKeyForm.ShowDialog();
+                if (newPassKeyForm.Canceled || string.IsNullOrEmpty(newPassKeyForm.txtBox.Text))
+                {
+                    MessageBox.Show("必须设置加密密钥后才能继续。", "加密密钥", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return null;
+                }
+
+                InputForm newPassKeyForm2 = new InputForm("请再次输入加密密钥以确认。", true);
+                newPassKeyForm2.ShowDialog();
+                if (newPassKeyForm2.Canceled || string.IsNullOrEmpty(newPassKeyForm2.txtBox.Text))
+                {
+                    MessageBox.Show("必须设置加密密钥后才能继续。", "加密密钥", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return null;
+                }
+
+                string newPassKey = newPassKeyForm.txtBox.Text;
+                string confirmPassKey = newPassKeyForm2.txtBox.Text;
+
+                if (newPassKey != confirmPassKey)
+                {
+                    MessageBox.Show("两次输入的加密密钥不一致。");
+                    continue;
+                }
+
+                if (!this.ChangeEncryptionKey(null, newPassKey))
+                {
+                    MessageBox.Show("无法设置加密密钥。");
+                    continue;
+                }
+
+                MessageBox.Show("加密密钥已设置。");
+                return newPassKey;
+            }
+        }
+
+        public string RequirePassKey()
+        {
+            if (this.Encrypted)
+                return PromptForPassKey();
+            return PromptSetupPassKey();
+        }
+
+        public bool PromptVerifyPassKey(string prompt = "请输入加密密钥。")
+        {
+            if (!this.Encrypted)
+                return false;
+
+            InputForm passKeyForm = new InputForm(prompt, true);
+            passKeyForm.ShowDialog();
+            if (passKeyForm.Canceled || string.IsNullOrEmpty(passKeyForm.txtBox.Text))
+                return false;
+
+            try
+            {
+                if (!this.VerifyPasskey(passKeyForm.txtBox.Text))
+                {
+                    MessageBox.Show("加密密钥不正确。", "加密密钥", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
+            }
+            catch (Exception)
+            {
+                MessageBox.Show("加密密钥不正确。", "加密密钥", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
             }
 
-            InputForm newPassKeyForm2 = new InputForm("Confirm new passkey.");
-            newPassKeyForm2.ShowDialog();
-            if (newPassKeyForm2.Canceled)
-            {
-                MessageBox.Show("WARNING: You chose to not encrypt your files. Doing so imposes a security risk for yourself. If an attacker were to gain access to your computer, they could completely lock you out of your account and steal all your items.");
-                return null;
-            }
-
-            string newPassKey = newPassKeyForm.txtBox.Text;
-            string confirmPassKey = newPassKeyForm2.txtBox.Text;
-
-            if (newPassKey != confirmPassKey)
-            {
-                MessageBox.Show("Passkeys do not match.");
-                return null;
-            }
-
-            if (!this.ChangeEncryptionKey(null, newPassKey))
-            {
-                MessageBox.Show("Unable to set passkey.");
-                return null;
-            }
-            else
-            {
-                MessageBox.Show("Passkey successfully set.");
-            }
-
-            return newPassKey;
+            return true;
         }
 
         public SteamAuth.SteamGuardAccount[] GetAllAccounts(string passKey = null, int limit = -1)
@@ -236,7 +270,17 @@ namespace Steam_Desktop_Authenticator
                     fileText = decryptedText;
                 }
 
-                var account = JsonConvert.DeserializeObject<SteamAuth.SteamGuardAccount>(fileText);
+                SteamGuardAccount account;
+                try
+                {
+                    account = JsonConvert.DeserializeObject<SteamAuth.SteamGuardAccount>(fileText);
+                }
+                catch (Exception)
+                {
+                    if (this.Encrypted)
+                        return new SteamGuardAccount[0];
+                    continue;
+                }
                 if (account == null) continue;
                 accounts.Add(account);
 

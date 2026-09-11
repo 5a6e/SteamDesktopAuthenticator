@@ -25,7 +25,7 @@ namespace Steam_Desktop_Authenticator
 
             if (this.PhoneNumber[0] != '+')
             {
-                MessageBox.Show("Phone number must start with + and country code.", "Phone Number", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("手机号必须以 + 和国家区号开头。", "手机号", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 

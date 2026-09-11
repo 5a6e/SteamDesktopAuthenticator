@@ -27,7 +27,7 @@ namespace Steam_Desktop_Authenticator
             {
                 // After 2 tries tell the user that there seems to be an issue
                 if (deviceCodesGenerated > 2)
-                    MessageBox.Show("There seems to be an issue logging into your account with these two factor codes. Are you sure SDA is still your authenticator?");
+                    MessageBox.Show("使用这些两步验证码登录似乎有问题。请确认本程序仍是该账号的令牌。");
 
                 await Task.Delay(30000);
             }
@@ -36,7 +36,7 @@ namespace Steam_Desktop_Authenticator
 
             if (account == null)
             {
-                MessageBox.Show("This account already has an authenticator linked. You must remove that authenticator to add SDA as your authenticator.", "Steam Login", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("该账号已绑定令牌。必须先解绑现有令牌，才能绑定本程序。", "Steam 登录", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return null;
             }
             else
@@ -50,10 +50,10 @@ namespace Steam_Desktop_Authenticator
 
         public Task<string> GetEmailCodeAsync(string email, bool previousCodeWasIncorrect)
         {
-            string message = "Enter the code sent to your email:";
+            string message = "请输入发到邮箱的验证码：";
             if (previousCodeWasIncorrect)
             {
-                message = "The code you provided was invalid. Enter the code sent to your email:";
+                message = "验证码不正确，请重新输入发到邮箱的验证码：";
             }
 
             InputForm emailForm = new InputForm(message);

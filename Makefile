@@ -13,3 +13,6 @@ release:
 
 clean:
 	dotnet clean "$(SLN)"
+
+publish:
+	dotnet publish "Steam Desktop Authenticator/Steam Desktop Authenticator.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true

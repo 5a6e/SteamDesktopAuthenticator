@@ -49,18 +49,18 @@ namespace Steam_Desktop_Authenticator
         {
             Exception lastError = null;
 
-            var attempts = new List<(string email, string password)>();
+            var attempts = new List<(string email, string password, string imapHost)>();
             if (!string.IsNullOrWhiteSpace(row.Email) && !string.IsNullOrWhiteSpace(row.EmailPassword))
-                attempts.Add((row.Email, row.EmailPassword));
+                attempts.Add((row.Email, row.EmailPassword, row.ImapHost));
             if (!string.IsNullOrWhiteSpace(row.BackupEmail) && !string.IsNullOrWhiteSpace(row.BackupEmailPassword))
-                attempts.Add((row.BackupEmail, row.BackupEmailPassword));
+                attempts.Add((row.BackupEmail, row.BackupEmailPassword, row.BackupImapHost));
 
             if (attempts.Count == 0)
                 throw new InvalidOperationException("未填写邮箱或邮箱密码");
 
             foreach (var attempt in attempts)
             {
-                string hostSpec = InferHost(row.ImapHost, attempt.email);
+                string hostSpec = InferHost(attempt.imapHost, attempt.email);
                 if (string.IsNullOrWhiteSpace(hostSpec))
                 {
                     lastError = new InvalidOperationException("未填写邮箱地址（IMAP 主机）");

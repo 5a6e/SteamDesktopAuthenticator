@@ -15,12 +15,13 @@ namespace Steam_Desktop_Authenticator
         public string ImapHost { get; set; }
         public string BackupEmail { get; set; }
         public string BackupEmailPassword { get; set; }
+        public string BackupImapHost { get; set; }
         public string Extra { get; set; }
     }
 
     public class ExcelAccountSheet : IDisposable
     {
-        private const int ExtraColumn = 8;
+        private const int ExtraColumn = 9;
 
         private string _path;
         private readonly XLWorkbook _workbook;
@@ -57,6 +58,7 @@ namespace Steam_Desktop_Authenticator
                     ImapHost = Cell(r, 5),
                     BackupEmail = Cell(r, 6),
                     BackupEmailPassword = Cell(r, 7),
+                    BackupImapHost = Cell(r, 8),
                     Extra = Cell(r, ExtraColumn)
                 });
             }

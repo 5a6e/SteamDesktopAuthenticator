@@ -57,5 +57,15 @@ namespace Steam_Desktop_Authenticator
                 this.Canceled = true;
             }
         }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            StartPosition = FormStartPosition.Manual;
+            if (Owner != null)
+                CenterToParent();
+            else
+                CenterToScreen();
+        }
     }
 }

@@ -7,9 +7,12 @@ namespace Steam_Desktop_Authenticator
 {
     public partial class MaFileViewForm : Form
     {
+        private readonly SteamGuardAccount account;
+
         public MaFileViewForm(SteamGuardAccount account)
         {
             InitializeComponent();
+            this.account = account;
             string name = string.IsNullOrEmpty(account?.AccountName) ? "maFile" : account.AccountName;
             Text = "查看 maFile - " + name;
             txtJson.Text = JsonConvert.SerializeObject(account, Formatting.Indented);
@@ -19,10 +22,10 @@ namespace Steam_Desktop_Authenticator
 
         private void btnCopy_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrEmpty(txtJson.Text))
+            if (account == null)
                 return;
 
-            Clipboard.SetText(txtJson.Text);
+            Clipboard.SetText(JsonConvert.SerializeObject(account, Formatting.None));
             lblCopied.Text = "已复制到剪贴板";
         }
 

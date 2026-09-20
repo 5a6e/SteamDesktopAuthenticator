@@ -120,9 +120,45 @@ namespace Steam_Desktop_Authenticator
 
         private void btnSteamLogin_Click(object sender, EventArgs e)
         {
-            var loginForm = new LoginForm();
-            loginForm.ShowDialog();
-            this.loadAccountsList();
+            string previousAccount = currentAccount?.AccountName;
+            bool tradesWasEnabled = timerTradesPopup.Enabled;
+            timerSteamGuard.Enabled = false;
+            timerTradesPopup.Enabled = false;
+            btnSteamLogin.Enabled = false;
+
+            var ui = this;
+            var thread = new Thread(() =>
+            {
+                LoginForm loginForm = null;
+                try
+                {
+                    loginForm = new LoginForm(LoginForm.LoginType.Initial, null, passKey);
+                    Application.Run(loginForm);
+                }
+                finally
+                {
+                    string boundName = loginForm?.BoundAccount?.AccountName;
+                    try
+                    {
+                        ui.BeginInvoke(new Action(() =>
+                        {
+                            if (ui.IsDisposed)
+                                return;
+                            btnSteamLogin.Enabled = true;
+                            timerSteamGuard.Enabled = true;
+                            timerTradesPopup.Enabled = tradesWasEnabled;
+                            loadAccountsList(boundName ?? previousAccount);
+                        }));
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                    }
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Name = "SteamLoginUI";
+            thread.Start();
         }
 
         private void btnViewMaFile_Click(object sender, EventArgs e)
@@ -133,23 +169,9 @@ namespace Steam_Desktop_Authenticator
                 return;
             }
 
-            try
+            using (var form = new MaFileViewForm(currentAccount))
             {
-                if (!manifest.Encrypted || !manifest.PromptVerifyPassKey("请输入加密密钥以查看 maFile。"))
-                {
-                    if (!manifest.Encrypted)
-                        MessageBox.Show(this, "必须先设置加密密钥。", "查看 maFile", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                using (var form = new MaFileViewForm(currentAccount))
-                {
-                    form.ShowDialog(this);
-                }
-            }
-            catch (Exception)
-            {
-                MessageBox.Show(this, "无法查看 maFile：加密密钥不正确或文件无法解密。", "查看 maFile", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                form.ShowDialog(this);
             }
         }
 
@@ -577,7 +599,7 @@ namespace Steam_Desktop_Authenticator
         /// <param name="account">The account to refresh</param>
         private void PromptRefreshLogin(SteamGuardAccount account)
         {
-            var loginForm = new LoginForm(LoginForm.LoginType.Refresh, account);
+            var loginForm = new LoginForm(LoginForm.LoginType.Refresh, account, passKey);
             loginForm.ShowDialog();
         }
 
@@ -597,7 +619,7 @@ namespace Steam_Desktop_Authenticator
         /// <summary>
         /// Decrypts files and populates list UI with accounts
         /// </summary>
-        private void loadAccountsList()
+        private void loadAccountsList(string selectAccountName = null)
         {
             currentAccount = null;
 
@@ -615,7 +637,15 @@ namespace Steam_Desktop_Authenticator
                 }
 
                 listAccounts.Sorted = true;
-                listAccounts.SelectedIndex = 0;
+
+                int selectIndex = 0;
+                if (!string.IsNullOrEmpty(selectAccountName))
+                {
+                    int found = listAccounts.Items.IndexOf(selectAccountName);
+                    if (found >= 0)
+                        selectIndex = found;
+                }
+                listAccounts.SelectedIndex = selectIndex;
             }
 
             RefreshTrayAccountMenu();

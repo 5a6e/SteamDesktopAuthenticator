@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SteamAuth;
@@ -13,12 +14,21 @@ namespace Steam_Desktop_Authenticator
         public SteamGuardAccount account;
         public LoginType LoginReason;
         public SessionData Session;
+        public SteamGuardAccount BoundAccount { get; private set; }
 
-        public LoginForm(LoginType loginReason = LoginType.Initial, SteamGuardAccount account = null)
+        private readonly string existingPassKey;
+        private CancellationTokenSource loginCts;
+        private SteamClient steamClient;
+        private SteamGuardAccount pendingLinkAccount;
+        private bool linkFinalized;
+
+        public LoginForm(LoginType loginReason = LoginType.Initial, SteamGuardAccount account = null, string passKey = null)
         {
             InitializeComponent();
             this.LoginReason = loginReason;
             this.account = account;
+            this.existingPassKey = passKey;
+            this.FormClosing += LoginForm_FormClosing;
 
             try
             {
@@ -67,69 +77,101 @@ namespace Steam_Desktop_Authenticator
             btnSteamLogin.Text = "登录";
         }
 
-        private async void btnSteamLogin_Click(object sender, EventArgs e)
+        private void DiscardPendingLink()
         {
-            // Disable button while we login
+            if (linkFinalized || pendingLinkAccount == null)
+                return;
+
+            SteamGuardAccount acc = pendingLinkAccount;
+            pendingLinkAccount = null;
+            try
+            {
+                Manifest.GetManifest().RemoveAccount(acc);
+            }
+            catch
+            {
+            }
+        }
+
+        private void LoginForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            loginCts?.Cancel();
+            DiscardPendingLink();
+            SteamClient client = steamClient;
+            steamClient = null;
+            if (client == null)
+                return;
+
+            // Never Disconnect on the UI thread — SteamKit can callback into WinForms and deadlock.
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try { client.Disconnect(); } catch { }
+            });
+        }
+
+        private void btnCancel_Click(object sender, EventArgs e)
+        {
+            loginCts?.Cancel();
+            this.DialogResult = DialogResult.Cancel;
+            this.Close();
+        }
+
+        private void btnSteamLogin_Click(object sender, EventArgs e)
+        {
             btnSteamLogin.Enabled = false;
             btnSteamLogin.Text = "登录中...";
+            btnCancel.Enabled = true;
+            btnCancel.Focus();
 
             string username = txtUsername.Text;
             string password = txtPassword.Text;
 
-            // Start a new SteamClient instance
-            SteamClient steamClient = new SteamClient();
+            loginCts?.Cancel();
+            loginCts = new CancellationTokenSource();
+            CancellationToken ct = loginCts.Token;
 
-            // Connect to Steam
-            steamClient.Connect();
-
-            // Really basic way to wait until Steam is connected
-            while (!steamClient.IsConnected)
-                await Task.Delay(500);
-
-            // Create a new auth session
-            CredentialsAuthSession authSession;
-            try
+            _ = Task.Factory.StartNew(async () =>
             {
-                authSession = await steamClient.Authentication.BeginAuthSessionViaCredentialsAsync(new AuthSessionDetails
+                SynchronizationContext.SetSynchronizationContext(new ThreadPoolSyncContext());
+                try
                 {
-                    Username = username,
-                    Password = password,
-                    IsPersistentSession = false,
-                    PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_MobileApp,
-                    ClientOSType = EOSType.Android9,
-                    DeviceFriendlyName = SteamDeviceName.Generate(),
-                    Authenticator = new UserFormAuthenticator(this.account),
-                });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Steam 登录错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                this.Close();
-                return;
-            }
+                    SessionData sessionData = await LoginSteamAsync(username, password, ct).ConfigureAwait(false);
+                    PostToUi(() => ContinueAfterSteamLogin(sessionData, ct));
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    PostToUi(() =>
+                    {
+                        if (IsDisposed)
+                            return;
+                        MessageBox.Show(this, ex.Message, "Steam 登录错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ResetLoginButton();
+                    });
+                }
+            }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+        }
 
-            // Starting polling Steam for authentication response
-            AuthPollResult pollResponse;
+        private void PostToUi(Action action)
+        {
+            if (IsDisposed || !IsHandleCreated)
+                return;
             try
             {
-                pollResponse = await authSession.PollingWaitForResultAsync();
+                BeginInvoke(action);
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException)
             {
-                MessageBox.Show(ex.Message, "Steam 登录错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                this.Close();
+            }
+        }
+
+        private async void ContinueAfterSteamLogin(SessionData sessionData, CancellationToken ct)
+        {
+            if (IsDisposed || ct.IsCancellationRequested)
                 return;
-            }
 
-            // Build a SessionData object
-            SessionData sessionData = new SessionData()
-            {
-                SteamID = authSession.SteamID.ConvertToUInt64(),
-                AccessToken = pollResponse.AccessToken,
-                RefreshToken = pollResponse.RefreshToken,
-            };
-
-            //Login succeeded
             this.Session = sessionData;
 
             // If we're only logging in for an account import, stop here
@@ -150,15 +192,6 @@ namespace Steam_Desktop_Authenticator
                 return;
             }
 
-            // Show a dialog to make sure they really want to add their authenticator
-            var result = MessageBox.Show("Steam 账号登录成功。点确定继续绑定桌面令牌。", "Steam 登录", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
-            if (result == DialogResult.Cancel)
-            {
-                MessageBox.Show("已取消绑定令牌。", "Steam 登录", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                ResetLoginButton();
-                return;
-            }
-
             // Begin linking mobile authenticator
             AuthenticatorLinker linker = new AuthenticatorLinker(sessionData);
 
@@ -167,10 +200,16 @@ namespace Steam_Desktop_Authenticator
             {
                 try
                 {
-                    linkResponse = await linker.AddAuthenticator();
+                    linkResponse = await Task.Run(() => linker.AddAuthenticator(), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
                 }
                 catch (Exception ex)
                 {
+                    if (IsDisposed)
+                        return;
                     MessageBox.Show("绑定令牌时出错：" + ex.Message, "Steam 登录", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     ResetLoginButton();
                     return;
@@ -219,77 +258,169 @@ namespace Steam_Desktop_Authenticator
             } // End while loop checking for AwaitingFinalization
 
             Manifest manifest = Manifest.GetManifest();
-            string passKey = manifest.RequirePassKey();
+            string passKey = GetPassKey(manifest);
             if (passKey == null)
             {
                 this.Close();
                 return;
             }
 
-            //Save the file immediately; losing this would be bad.
+            // Keep the secret on disk in case of crash, but Steam is not bound until Finalize succeeds.
+            pendingLinkAccount = linker.LinkedAccount;
             if (!manifest.SaveAccount(linker.LinkedAccount, true, passKey))
             {
-                manifest.RemoveAccount(linker.LinkedAccount);
+                DiscardPendingLink();
                 MessageBox.Show("无法保存令牌文件，尚未完成绑定。");
                 this.Close();
                 return;
             }
 
-            MessageBox.Show("令牌尚未最终绑定。请先记下撤销码：" + linker.LinkedAccount.RevocationCode);
-
             AuthenticatorLinker.FinalizeResult finalizeResponse = AuthenticatorLinker.FinalizeResult.GeneralFailure;
-            while (finalizeResponse != AuthenticatorLinker.FinalizeResult.Success)
+            try
             {
-                InputForm smsCodeForm = new InputForm("请输入发送到手机的短信验证码。");
-                smsCodeForm.ShowDialog();
-                if (smsCodeForm.Canceled)
+                while (finalizeResponse != AuthenticatorLinker.FinalizeResult.Success)
                 {
-                    manifest.RemoveAccount(linker.LinkedAccount);
-                    this.Close();
-                    return;
-                }
-
-                InputForm confirmRevocationCode = new InputForm("请输入撤销码，以确认你已保存。");
-                confirmRevocationCode.ShowDialog();
-                if (confirmRevocationCode.txtBox.Text.ToUpper() != linker.LinkedAccount.RevocationCode)
-                {
-                    MessageBox.Show("撤销码不正确，令牌尚未绑定。");
-                    manifest.RemoveAccount(linker.LinkedAccount);
-                    this.Close();
-                    return;
-                }
-
-                string smsCode = smsCodeForm.txtBox.Text;
-                finalizeResponse = await linker.FinalizeAddAuthenticator(smsCode);
-
-                switch (finalizeResponse)
-                {
-                    case AuthenticatorLinker.FinalizeResult.BadSMSCode:
-                        continue;
-
-                    case AuthenticatorLinker.FinalizeResult.UnableToGenerateCorrectCodes:
-                        MessageBox.Show("无法生成正确的验证码来完成绑定。令牌可能尚未绑定。若已绑定，请务必记下撤销码（这是最后一次显示）：" + linker.LinkedAccount.RevocationCode);
-                        manifest.RemoveAccount(linker.LinkedAccount);
+                    InputForm smsCodeForm = new InputForm("请输入绑定验证码（短信或「添加验证器」邮件里的代码，不是登录验证码）。");
+                    smsCodeForm.ShowDialog(this);
+                    if (smsCodeForm.Canceled)
+                    {
+                        DiscardPendingLink();
                         this.Close();
                         return;
+                    }
 
-                    case AuthenticatorLinker.FinalizeResult.GeneralFailure:
-                        MessageBox.Show("无法完成令牌绑定。令牌可能尚未绑定。若已绑定，请务必记下撤销码（这是最后一次显示）：" + linker.LinkedAccount.RevocationCode);
-                        manifest.RemoveAccount(linker.LinkedAccount);
-                        this.Close();
-                        return;
+                    string smsCode = smsCodeForm.txtBox.Text;
+                    finalizeResponse = await Task.Run(() => linker.FinalizeAddAuthenticator(smsCode), ct);
+
+                    switch (finalizeResponse)
+                    {
+                        case AuthenticatorLinker.FinalizeResult.BadSMSCode:
+                            continue;
+
+                        case AuthenticatorLinker.FinalizeResult.UnableToGenerateCorrectCodes:
+                            DiscardPendingLink();
+                            MessageBox.Show("无法生成正确的验证码来完成绑定。令牌尚未在 Steam 上生效。");
+                            this.Close();
+                            return;
+
+                        case AuthenticatorLinker.FinalizeResult.GeneralFailure:
+                            DiscardPendingLink();
+                            MessageBox.Show("无法完成令牌绑定。令牌尚未在 Steam 上生效。");
+                            this.Close();
+                            return;
+                    }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                DiscardPendingLink();
+                return;
+            }
+            catch (Exception ex)
+            {
+                DiscardPendingLink();
+                MessageBox.Show("完成绑定时出错：" + ex.Message, "Steam 登录", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                this.Close();
+                return;
+            }
 
-            //Linked, finally. Re-save with FullyEnrolled property.
+            linkFinalized = true;
+            pendingLinkAccount = null;
+            BoundAccount = linker.LinkedAccount;
             manifest.SaveAccount(linker.LinkedAccount, true, passKey);
-            MessageBox.Show("手机令牌绑定成功。请记下撤销码：" + linker.LinkedAccount.RevocationCode);
+            MessageBox.Show("手机令牌绑定成功。");
             this.Close();
+        }
+
+        private async Task<SessionData> LoginSteamAsync(string username, string password, CancellationToken ct)
+        {
+            steamClient = new SteamClient();
+            using var pumpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            Task pumpTask = PumpCallbacksAsync(steamClient, pumpCts.Token);
+            try
+            {
+                steamClient.Connect();
+
+                DateTime connectDeadline = DateTime.UtcNow.AddSeconds(10);
+                while (!steamClient.IsConnected)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (DateTime.UtcNow > connectDeadline)
+                        throw new TimeoutException("Steam 连接超时，请检查网络后重试。");
+                    await Task.Delay(200, ct).ConfigureAwait(false);
+                }
+
+                CredentialsAuthSession authSession = await AwaitWithTimeout(
+                    steamClient.Authentication.BeginAuthSessionViaCredentialsAsync(new AuthSessionDetails
+                    {
+                        Username = username,
+                        Password = password,
+                        IsPersistentSession = false,
+                        PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_MobileApp,
+                        ClientOSType = EOSType.Android9,
+                        DeviceFriendlyName = SteamDeviceName.Generate(),
+                        Authenticator = new UserFormAuthenticator(this.account, this, ct),
+                    }),
+                    TimeSpan.FromMinutes(2),
+                    ct,
+                    "Steam 登录超时").ConfigureAwait(false);
+
+                AuthPollResult pollResponse = await AwaitWithTimeout(
+                    authSession.PollingWaitForResultAsync(),
+                    TimeSpan.FromMinutes(5),
+                    ct,
+                    "Steam 登录等待超时").ConfigureAwait(false);
+
+                return new SessionData()
+                {
+                    SteamID = authSession.SteamID.ConvertToUInt64(),
+                    AccessToken = pollResponse.AccessToken,
+                    RefreshToken = pollResponse.RefreshToken,
+                };
+            }
+            finally
+            {
+                pumpCts.Cancel();
+                try { await pumpTask.ConfigureAwait(false); } catch { }
+            }
+        }
+
+        private static async Task PumpCallbacksAsync(SteamClient client, CancellationToken ct)
+        {
+            try
+            {
+                while (!ct.IsCancellationRequested)
+                    await client.WaitForCallbackAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        private static async Task<T> AwaitWithTimeout<T>(Task<T> task, TimeSpan timeout, CancellationToken ct, string timeoutMessage)
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(timeout);
+            Task completed = await Task.WhenAny(task, Task.Delay(Timeout.Infinite, timeoutCts.Token)).ConfigureAwait(false);
+            if (completed != task)
+            {
+                ct.ThrowIfCancellationRequested();
+                throw new TimeoutException(timeoutMessage);
+            }
+
+            return await task.ConfigureAwait(false);
+        }
+
+        private string GetPassKey(Manifest man)
+        {
+            if (!string.IsNullOrEmpty(existingPassKey))
+                return existingPassKey;
+            return man.RequirePassKey();
         }
 
         private void HandleManifest(Manifest man, bool IsRefreshing = false)
         {
-            string passKey = man.RequirePassKey();
+            string passKey = GetPassKey(man);
             if (passKey == null)
             {
                 this.Close();
@@ -303,7 +434,7 @@ namespace Steam_Desktop_Authenticator
             }
             else
             {
-                MessageBox.Show("手机令牌绑定成功。请记下撤销码：" + account.RevocationCode, "Steam 登录", MessageBoxButtons.OK);
+                MessageBox.Show("手机令牌绑定成功。", "Steam 登录", MessageBoxButtons.OK);
             }
             this.Close();
         }
@@ -314,6 +445,8 @@ namespace Steam_Desktop_Authenticator
             {
                 txtUsername.Text = account.AccountName;
             }
+
+            CenterToScreen();
         }
 
         public enum LoginType
@@ -321,6 +454,27 @@ namespace Steam_Desktop_Authenticator
             Initial,
             Refresh,
             Import
+        }
+
+        /// <summary>
+        /// Runs SteamKit callbacks on the calling thread/thread-pool instead of WinForms UI.
+        /// </summary>
+        private sealed class ThreadPoolSyncContext : SynchronizationContext
+        {
+            public override void Post(SendOrPostCallback d, object state)
+            {
+                ThreadPool.QueueUserWorkItem(_ => d(state));
+            }
+
+            public override void Send(SendOrPostCallback d, object state)
+            {
+                d(state);
+            }
+
+            public override SynchronizationContext CreateCopy()
+            {
+                return this;
+            }
         }
     }
 }

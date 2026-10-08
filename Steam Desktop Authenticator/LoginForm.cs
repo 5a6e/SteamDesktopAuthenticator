@@ -334,14 +334,14 @@ namespace Steam_Desktop_Authenticator
 
         private async Task<SessionData> LoginSteamAsync(string username, string password, CancellationToken ct)
         {
-            steamClient = new SteamClient();
+            steamClient = SteamClientFactory.Create();
             using var pumpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             Task pumpTask = PumpCallbacksAsync(steamClient, pumpCts.Token);
             try
             {
                 steamClient.Connect();
 
-                DateTime connectDeadline = DateTime.UtcNow.AddSeconds(10);
+                DateTime connectDeadline = DateTime.UtcNow.AddSeconds(AppConfig.GetSteamConnectTimeoutSeconds());
                 while (!steamClient.IsConnected)
                 {
                     ct.ThrowIfCancellationRequested();

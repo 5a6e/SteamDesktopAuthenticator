@@ -37,10 +37,10 @@ namespace Steam_Desktop_Authenticator
             {
                 ct.ThrowIfCancellationRequested();
 
-                steamClient = new SteamClient();
+                steamClient = SteamClientFactory.Create();
                 steamClient.Connect();
 
-                DateTime connectDeadline = DateTime.UtcNow.AddSeconds(30);
+                DateTime connectDeadline = DateTime.UtcNow.AddSeconds(AppConfig.GetSteamConnectTimeoutSeconds());
                 while (!steamClient.IsConnected)
                 {
                     if (DateTime.UtcNow > connectDeadline)

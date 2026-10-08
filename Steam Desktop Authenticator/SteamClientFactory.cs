@@ -12,7 +12,7 @@ namespace Steam_Desktop_Authenticator
             int timeoutSeconds = AppConfig.GetSteamConnectTimeoutSeconds();
             var config = SteamConfiguration.Create(builder =>
             {
-                builder.WithProtocolTypes(ProtocolTypes.WebSocket);
+                builder.WithProtocolTypes(ProtocolTypes.Tcp);
                 builder.WithConnectionTimeout(TimeSpan.FromSeconds(timeoutSeconds));
                 builder.WithHttpClientFactory(CreateHttpClient);
             });
